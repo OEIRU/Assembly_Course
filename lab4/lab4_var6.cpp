@@ -1,10 +1,10 @@
-﻿#include <iostream>
+#include <iostream>
 #include <locale>
 
 extern "C" double __cdecl func(double x);
 
 int main() {
-    std::setlocale(LC_ALL, "Russian");
+    std::setlocale(LC_ALL, "Russian"); // Русский язык в консоли
     double x, res;
 
     std::cout << "Рассчет функции y = (3 * cos^2(x)) / 4\nВведите x: ";
@@ -18,6 +18,6 @@ int main() {
         std::cout << "Ошибка ввода" << std::endl;
     }
 
-    system("pause");
+    system("pause"); // Чтобы консоль не закрывалась
     return 0;
 }
