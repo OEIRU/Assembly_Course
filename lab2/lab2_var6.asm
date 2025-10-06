@@ -8,75 +8,72 @@ EXTRN CharToOemA@8:NEAR
 EXTRN ReadConsoleA@20:NEAR
 EXTRN ExitProcess@4:NEAR
 EXTRN lstrlenA@4:NEAR
-EXTRN wsprintfA:NEAR
 
-
-STD_INPUT_HANDLE EQU -10    ; Константа для получения дескриптора ввода
-STD_OUTPUT_HANDLE EQU -11   ; Константа для получения дескриптора вывода
-
+STD_INPUT_HANDLE EQU -10
+STD_OUTPUT_HANDLE EQU -11
 
 .DATA
-    hStdIn DD 0             ; Дескриптор ввода
-    hStdOut DD 0            ; Дескриптор вывода
-    bytesRead DD 0          ; Количество прочитанных байт
-    bytesWritten DD 0       ; Количество записанных байт
+    hStdIn DD 0
+    hStdOut DD 0
+    bytesRead DD 0
+    bytesWritten DD 0
 
-    ; Сообщения для пользователя
     msgSource    DB "Введите исходную строку: ", 0
     msgStartPos  DB "Введите начальную позицию: ", 0
     msgLength    DB "Введите длину подстроки: ", 0
     msgResult    DB "Результат: ", 0
     msgError     DB "Ошибка: некорректные параметры!", 0
+    newline      DB 13, 10, 0
 
-    ; Буферы для строк и промежуточных данных
-    sourceString DB 255 DUP(0)   ; Введённая пользователем строка
-    startPosStr  DB 10 DUP(0)    ; Строка для ввода позиции
-    lengthStr    DB 10 DUP(0)    ; Строка для ввода длины
-    resultBuffer DB 255 DUP(0)   ; Буфер для результата (подстрока)
+    sourceString DB 255 DUP(0)
+    startPosStr  DB 10 DUP(0)
+    lengthStr    DB 10 DUP(0)
+    resultBuffer DB 255 DUP(0)
+    tempBuffer   DB 255 DUP(0)
 
-
-    ; Числовые значения
-    startPos  DD 0               ; Начальная позиция подстроки
-    subLength DD 0               ; Длина подстроки
-    letterFound DB 0             ; Флаг: найдена ли буква в подстроке
-
+    startPos  DD 0
+    subLength DD 0
+    letterFound DB 0
 
 .CODE
 start:
-    ; Получение дескрипторов ввода и вывода консоли
+    ; Получение дескрипторов
     PUSH STD_INPUT_HANDLE
     CALL GetStdHandle@4
     MOV hStdIn, EAX
+    
     PUSH STD_OUTPUT_HANDLE
     CALL GetStdHandle@4
     MOV hStdOut, EAX
 
-    ; Переводим все сообщения в OEM-кодировку для корректного вывода в консоль
+    ; Преобразование сообщений в OEM
     PUSH OFFSET msgSource
     PUSH OFFSET msgSource
     CALL CharToOemA@8
+    
     PUSH OFFSET msgStartPos
     PUSH OFFSET msgStartPos
     CALL CharToOemA@8
+    
     PUSH OFFSET msgLength
     PUSH OFFSET msgLength
     CALL CharToOemA@8
+    
     PUSH OFFSET msgResult
     PUSH OFFSET msgResult
     CALL CharToOemA@8
+    
     PUSH OFFSET msgError
     PUSH OFFSET msgError
     CALL CharToOemA@8
 
-
-
-    ; Запрос исходной строки у пользователя
+    ; Ввод исходной строки
     PUSH OFFSET msgSource
     CALL PrintMessage
     PUSH OFFSET sourceString
     CALL ReadInput
 
-    ; Запрос начальной позиции подстроки
+    ; Ввод начальной позиции
     PUSH OFFSET msgStartPos
     CALL PrintMessage
     PUSH OFFSET startPosStr
@@ -85,7 +82,7 @@ start:
     CALL atoi
     MOV startPos, EAX
 
-    ; Запрос длины подстроки
+    ; Ввод длины
     PUSH OFFSET msgLength
     CALL PrintMessage
     PUSH OFFSET lengthStr
@@ -94,126 +91,176 @@ start:
     CALL atoi
     MOV subLength, EAX
 
-    ; Проверка корректности параметров 
-    ; (позиция и длина не выходят за границы строки)
+    ; Проверка параметров
     CALL ValidateParameters
     CMP EAX, 0
     JE ErrorExit
 
-
-
-    ; Выделение подстроки из исходной строки
+    ; Извлечение подстроки
     CALL ExtractSubstring
-
-    ; Перевод подстроки в нижний регистр и одновременная проверка наличия буквы
-    MOV letterFound, 0
-    CALL ConvertToLower
+    
+    ; Проверка наличия букв и преобразование в нижний регистр
+    CALL CheckAndConvert
     CMP letterFound, 0
     JE ErrorExit
 
-    ; Вывод результата пользователю
+    ; Вывод результата
     PUSH OFFSET msgResult
     CALL PrintMessage
+    
+    ; Вывод самой подстроки
     PUSH OFFSET resultBuffer
     CALL PrintMessage
+    
+    ; Добавляем перевод строки
+    PUSH OFFSET newline
+    CALL PrintMessage
+    
     JMP ExitProgram
 
 ErrorExit:
-    ; Вывод сообщения об ошибке
     PUSH OFFSET msgError
+    CALL PrintMessage
+    PUSH OFFSET newline
     CALL PrintMessage
 
 ExitProgram:
-    ; Завершение программы
     PUSH 0
     CALL ExitProcess@4
 
-
-; Проверяет, что параметры подстроки корректны 
-; (позиция и длина не выходят за границы исходной строки)
+; Проверка параметров
 ValidateParameters PROC
+    ; Проверка startPos >= 1
     MOV EAX, startPos
-        MOV ESI, [ESP+4]
+    CMP EAX, 1
     JL InvalidParams
+    
+    ; Проверка subLength > 0
+    MOV EAX, subLength
+    CMP EAX, 0
+    JLE InvalidParams
+    
+    ; Получение длины исходной строки
     PUSH OFFSET sourceString
     CALL lstrlenA@4
     MOV ECX, EAX
+    
+    ; Проверка что startPos не превышает длину строки
+    MOV EAX, startPos
+    CMP EAX, ECX
+    JG InvalidParams
+    
+    ; Проверка что подстрока не выходит за границы
     MOV EAX, startPos
     DEC EAX
     ADD EAX, subLength
     CMP EAX, ECX
     JG InvalidParams
+    
     MOV EAX, 1
     RET
+    
 InvalidParams:
     MOV EAX, 0
     RET
 ValidateParameters ENDP
 
-
-; Извлекает подстроку из исходной строки по позиции и длине
+; Извлечение подстроки
 ExtractSubstring PROC
-    MOV ESI, OFFSET sourceString   ; Адрес исходной строки
-    ADD ESI, startPos             ; Смещаемся на startPos
-    DEC ESI                       ; Корректируем (позиция с 1)
-    MOV EDI, OFFSET resultBuffer  ; Куда копировать
-    MOV ECX, subLength            ; Сколько символов
+    MOV ESI, OFFSET sourceString
+    MOV EAX, startPos
+    DEC EAX
+    ADD ESI, EAX
+    MOV EDI, OFFSET resultBuffer
+    MOV ECX, subLength
     CLD
-    REP MOVSB                     ; Копируем подстроку
-    MOV BYTE PTR [EDI], 0         ; Завершаем нулём
+    REP MOVSB
+    MOV BYTE PTR [EDI], 0
     RET
 ExtractSubstring ENDP
 
-
-; Переводит подстроку в нижний регистр (английские и русские буквы в CP866)
-ConvertToLower PROC
+; Проверка наличия букв и преобразование в нижний регистр
+CheckAndConvert PROC
     MOV EDI, OFFSET resultBuffer
     MOV ECX, subLength
-ConvertLoop:
+    MOV letterFound, 0
+    
+ProcessLoop:
     MOV AL, [EDI]
-    ; Проверка английских букв (A-Z)
+    
+    ; Проверка английских букв A-Z
     CMP AL, 'A'
-    JL CheckRussian
+    JB CheckEnglishLower
     CMP AL, 'Z'
-    JG CheckRussian
-    ADD AL, 32
+    JA CheckEnglishLower
+    ; Это заглавная английская буква
+    MOV letterFound, 1
+    ADD AL, 32  ; Преобразуем в строчную
     MOV [EDI], AL
+    JMP NextChar
+    
+CheckEnglishLower:
+    ; Проверка английских букв a-z
+    CMP AL, 'a'
+    JB CheckRussian
+    CMP AL, 'z'
+    JA CheckRussian
+    ; Это строчная английская буква
     MOV letterFound, 1
     JMP NextChar
+    
 CheckRussian:
-    ; Русские заглавные буквы 'А'-'П' (128..143) -> 'а'-'п' (160..175)
-    CMP AL, 128
-    JL CheckRtoYa
-    CMP AL, 143
-    JG CheckRtoYa
-    ADD AL, 32
+    ; Проверка русских букв в OEM-кодировке (CP866)
+    ; Русские заглавные А-Я: 80h-9Fh (128-159)
+    CMP AL, 80h
+    JB NextChar
+    CMP AL, 9Fh
+    JA CheckRussianLower
+    ; Это заглавная русская буква
+    MOV letterFound, 1
+    ; Преобразуем в строчную
+    CMP AL, 90h  ; Разделяем на две группы
+    JB FirstGroup
+    ; Вторая группа Р-Я (90h-9Fh -> E0h-EFh)
+    ADD AL, 50h
+    JMP StoreRussian
+FirstGroup:
+    ; Первая группа А-П (80h-8Fh -> A0h-AFh)
+    ADD AL, 20h
+StoreRussian:
     MOV [EDI], AL
+    JMP NextChar
+
+CheckRussianLower:
+    ; Русские строчные а-я: A0h-BFh и E0h-EFh (160-191 и 224-239)
+    CMP AL, 0A0h
+    JB NextChar
+    CMP AL, 0BFh
+    JA CheckRussianLower2
+    ; Это строчная русская буква первой группы
     MOV letterFound, 1
     JMP NextChar
-CheckRtoYa:
-    ; Русские заглавные буквы 'Р'-'Я' (144..159) -> 'р'-'я' (224..239)
-    CMP AL, 144
-    JL NextChar
-    CMP AL, 159
-    JG NextChar
-    ADD AL, 80
-    MOV [EDI], AL
+    
+CheckRussianLower2:
+    CMP AL, 0E0h
+    JB NextChar
+    CMP AL, 0EFh
+    JA NextChar
+    ; Это строчная русская буква второй группы
     MOV letterFound, 1
+    
 NextChar:
     INC EDI
-    LOOP ConvertLoop
+    LOOP ProcessLoop
     RET
-ConvertToLower ENDP
+CheckAndConvert ENDP
 
-
-; Выводит строку на консоль
+; Вывод строки
 PrintMessage PROC
     PUSH EBP
     MOV EBP, ESP
-    ; Определение длины строки
     PUSH [EBP+8]
     CALL lstrlenA@4
-    ; Вывод сообщения
     PUSH 0
     PUSH OFFSET bytesWritten
     PUSH EAX
@@ -224,18 +271,17 @@ PrintMessage PROC
     RET 4
 PrintMessage ENDP
 
-
-; Читает строку с консоли, удаляет символы перевода строки
+; Чтение ввода
 ReadInput PROC
     PUSH EBP
     MOV EBP, ESP
     PUSH 0
     PUSH OFFSET bytesRead
-    PUSH 253
+    PUSH 254
     PUSH [EBP+8]
     PUSH hStdIn
     CALL ReadConsoleA@20
-    ; Удаление символов CRLF (конец строки)
+    ; Удаление CRLF
     MOV EDI, [EBP+8]
     MOV ECX, bytesRead
     CMP ECX, 2
@@ -247,8 +293,7 @@ Done:
     RET 4
 ReadInput ENDP
 
-
-; Преобразует строку в целое число (atoi)
+; Преобразование строки в число
 atoi PROC
     PUSH EBP
     MOV EBP, ESP
@@ -256,18 +301,19 @@ atoi PROC
     PUSH ESI
     MOV ESI, [EBP+8]
     XOR EAX, EAX
-    XOR ECX, ECX
     XOR EBX, EBX
 ConvertLoop:
-    MOV CL, [ESI]
-    INC ESI
-    CMP CL, '0'
+    MOV BL, [ESI]
+    CMP BL, 0
+    JE Done
+    CMP BL, '0'
     JB Done
-    CMP CL, '9'
+    CMP BL, '9'
     JA Done
-    SUB CL, '0' 
+    SUB BL, '0'
     IMUL EAX, 10
-    ADD EAX, ECX
+    ADD EAX, EBX
+    INC ESI
     JMP ConvertLoop
 Done:
     POP ESI
@@ -275,7 +321,5 @@ Done:
     POP EBP
     RET 4
 atoi ENDP
-
-
 
 END start
